@@ -28,8 +28,11 @@ export default async (req) => {
 
   // Nur Aufrufe von der eigenen Seite zulassen
   const origin = req.headers.get("origin");
-  const host = req.headers.get("host");
-  if (origin && host && new URL(origin).host !== host) return json({ error: "origin" }, 403);
+  const hosts = [req.headers.get("host"), req.headers.get("x-forwarded-host"), new URL(req.url).host].filter(Boolean);
+  if (origin && !hosts.includes(new URL(origin).host)) {
+    console.error("check: fremde Herkunft abgelehnt", origin, hosts.join(","));
+    return json({ error: "origin" }, 403);
+  }
 
   let body;
   try { body = await req.json(); } catch { return json({ error: "body" }, 400); }
@@ -37,7 +40,7 @@ export default async (req) => {
   if (!prompt) return json({ error: "empty" }, 400);
 
   const key = Netlify.env.get("ANTHROPIC_API_KEY");
-  if (!key) return json({ error: "config" }, 500);
+  if (!key) { console.error("check: ANTHROPIC_API_KEY fehlt"); return json({ error: "config" }, 500); }
 
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 7000);
@@ -54,14 +57,20 @@ export default async (req) => {
         messages: [{ role: "user", content: `<prompt>\n${prompt}\n</prompt>` }],
       }),
     });
-    if (!res.ok) return json({ error: "upstream", status: res.status }, 502);
+    if (!res.ok) {
+      let detail = "";
+      try { const e = await res.json(); detail = e?.error?.type + ": " + e?.error?.message; } catch {}
+      console.error("check: Anthropic antwortet mit", res.status, detail);
+      return json({ error: "upstream", status: res.status }, 502);
+    }
     const data = await res.json();
     const text = (data.content || []).filter((c) => c.type === "text").map((c) => c.text).join("");
     const match = text.match(/\{[\s\S]*\}/);
-    if (!match) return json({ error: "parse" }, 502);
+    if (!match) { console.error("check: Antwort ohne JSON"); return json({ error: "parse" }, 502); }
     const o = JSON.parse(match[0]);
     return json({ bb: KEYS.map((k) => o[k] === true), tech: o.fachsprache === true });
-  } catch {
+  } catch (e) {
+    console.error("check: Aufruf fehlgeschlagen", e?.name, e?.message);
     return json({ error: "failed" }, 502);
   } finally {
     clearTimeout(timer);
