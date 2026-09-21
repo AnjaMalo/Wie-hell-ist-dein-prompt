@@ -1,6 +1,7 @@
 [build]
   publish = "."
-  functions = "functions = "."
+  functions = "."
+
 [[headers]]
   for = "/*"
   [headers.values]
