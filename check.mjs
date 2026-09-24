@@ -43,8 +43,12 @@ export default async (req) => {
   const prompt = String(body?.prompt ?? "").slice(0, 1500).trim();
   if (!prompt) return json({ error: "empty" }, 400);
 
-  const key = Netlify.env.get("ANTHROPIC_API_KEY");
-  if (!key) { console.error("check: ANTHROPIC_API_KEY fehlt"); return json({ error: "config" }, 500); }
+  const raw = Netlify.env.get("ANTHROPIC_API_KEY");
+  if (!raw) { console.error("check: ANTHROPIC_API_KEY fehlt"); return json({ error: "config" }, 500); }
+  // Leerzeichen und Zeilenumbrüche entfernen, die beim Einfügen mitkommen können
+  const key = String(raw).trim();
+  // Harmlose Kennzahlen für die Fehlersuche, der Schlüssel selbst wird nie protokolliert
+  const keyInfo = `Länge ${key.length}, Präfix ${key.startsWith("sk-ant-") ? "ok" : "unerwartet"}, getrimmt ${String(raw).length - key.length} Zeichen`;
 
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 7000);
@@ -64,7 +68,7 @@ export default async (req) => {
     if (!res.ok) {
       let detail = "";
       try { const e = await res.json(); detail = e?.error?.type + ": " + e?.error?.message; } catch {}
-      console.error("check: Anthropic antwortet mit", res.status, detail);
+      console.error("check: Anthropic antwortet mit", res.status, detail, "| Schlüssel:", keyInfo);
       return json({ error: "upstream", status: res.status }, 502);
     }
     const data = await res.json();
